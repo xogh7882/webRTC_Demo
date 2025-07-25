@@ -1,14 +1,17 @@
+// KurentoService.java - 완전한 구현
+
 package com.ssafy.webrtc_backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ssafy.webrtc_backend.util.SignalingHandler;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.kurento.client.IceCandidate;
-import org.kurento.client.KurentoClient;
-import org.kurento.client.MediaPipeline;
-import org.kurento.client.WebRtcEndpoint;
+import org.kurento.client.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -16,10 +19,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Slf4j
 @Service
@@ -28,7 +27,12 @@ public class KurentoService {
     @Value("${kurento.client.ws-url}")
     private String kurentoWsUrl;
 
+    @Autowired
+    @Lazy
+    private SignalingHandler signalingHandler;
+
     private KurentoClient kurentoClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     // 방별 미디어 파이프라인 관리
     private final Map<String, MediaPipeline> roomPipelines = new ConcurrentHashMap<>();
@@ -41,10 +45,6 @@ public class KurentoService {
 
     // 세션별 방 정보
     private final Map<String, String> sessionRooms = new ConcurrentHashMap<>();
-
-    // ICE Candidate 전송을 위한 큐와 실행자
-    private final Map<String, BlockingQueue<IceCandidate>> candidateQueues = new ConcurrentHashMap<>();
-    private final Map<String, ExecutorService> candidateExecutors = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -60,14 +60,32 @@ public class KurentoService {
 
     @PreDestroy
     public void cleanup() {
-        // ICE Candidate 실행자들 종료
-        candidateExecutors.values().forEach(ExecutorService::shutdown);
-        candidateExecutors.clear();
-        candidateQueues.clear();
+        // 모든 엔드포인트 정리
+        userEndpoints.values().forEach(endpoint -> {
+            try {
+                endpoint.release();
+            } catch (Exception e) {
+                log.warn("엔드포인트 정리 중 오류", e);
+            }
+        });
+        userEndpoints.clear();
 
+        // 모든 파이프라인 정리
+        roomPipelines.values().forEach(pipeline -> {
+            try {
+                pipeline.release();
+            } catch (Exception e) {
+                log.warn("파이프라인 정리 중 오류", e);
+            }
+        });
+        roomPipelines.clear();
+
+        // Kurento 클라이언트 정리
         if (kurentoClient != null) {
             kurentoClient.destroy();
         }
+
+        log.info("KurentoService 정리 완료");
     }
 
     /**
@@ -82,15 +100,19 @@ public class KurentoService {
 
             // 2. 사용자용 WebRTC 엔드포인트 생성
             WebRtcEndpoint endpoint = new WebRtcEndpoint.Builder(pipeline).build();
-            userEndpoints.put(sessionId, endpoint);
 
-            // 3. ICE Candidate 큐 및 실행자 설정
-            setupIceCandidateHandler(sessionId, session);
-
-            // 4. ICE Candidate 리스너 등록
+            // 3. ICE Candidate 리스너 등록
             endpoint.addIceCandidateFoundListener(event -> {
-                queueIceCandidate(sessionId, event.getCandidate());
+                try {
+                    IceCandidate candidate = event.getCandidate();
+                    sendIceCandidateToClient(sessionId, candidate);
+                } catch (Exception e) {
+                    log.error("ICE Candidate 전송 실패: sessionId={}", sessionId, e);
+                }
             });
+
+            // 4. 엔드포인트 저장
+            userEndpoints.put(sessionId, endpoint);
 
             // 5. 방 참가자 목록에 추가
             roomParticipants.computeIfAbsent(roomId, k -> new ConcurrentSkipListSet<>())
@@ -100,7 +122,8 @@ public class KurentoService {
             // 6. 기존 참가자들과 연결
             connectToExistingParticipants(roomId, sessionId, endpoint);
 
-            log.info("방 참가 완료: sessionId={}, roomId={}", sessionId, roomId);
+            log.info("방 참가 완료: sessionId={}, roomId={}, 총 참가자={}",
+                    sessionId, roomId, roomParticipants.get(roomId).size());
 
         } catch (Exception e) {
             log.error("방 참가 처리 실패: sessionId={}, roomId={}", sessionId, roomId, e);
@@ -109,118 +132,127 @@ public class KurentoService {
     }
 
     /**
-     * ICE Candidate 처리를 위한 큐 및 실행자 설정
+     * 통화 시작 (SDP Offer 생성)
      */
-    private void setupIceCandidateHandler(String sessionId, WebSocketSession session) {
-        BlockingQueue<IceCandidate> queue = new LinkedBlockingQueue<>();
-        candidateQueues.put(sessionId, queue);
-
-        ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "ICE-Candidate-" + sessionId);
-            t.setDaemon(true);
-            return t;
-        });
-
-        candidateExecutors.put(sessionId, executor);
-
-        // ICE Candidate 순차 처리 작업 시작
-        executor.submit(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    IceCandidate candidate = queue.take();
-                    sendIceCandidateSync(session, candidate);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                } catch (Exception e) {
-                    log.error("ICE candidate 처리 중 오류: sessionId={}", sessionId, e);
-                }
-            }
-        });
-    }
-
-    /**
-     * ICE Candidate를 큐에 추가
-     */
-    private void queueIceCandidate(String sessionId, IceCandidate candidate) {
-        BlockingQueue<IceCandidate> queue = candidateQueues.get(sessionId);
-        if (queue != null) {
-            try {
-                queue.offer(candidate);
-                log.debug("ICE candidate 큐에 추가: sessionId={}", sessionId);
-            } catch (Exception e) {
-                log.error("ICE candidate 큐 추가 실패: sessionId={}", sessionId, e);
-            }
-        }
-    }
-
-    /**
-     * 동기화된 ICE Candidate 전송
-     */
-    private synchronized void sendIceCandidateSync(WebSocketSession session, IceCandidate candidate) {
+    public String startCommunication(String sessionId) {
         try {
-            if (session.isOpen()) {
-                String message = String.format(
-                        "{\"type\":\"ice-candidate\",\"data\":{\"candidate\":\"%s\",\"sdpMid\":\"%s\",\"sdpMLineIndex\":%d}}",
-                        candidate.getCandidate(), candidate.getSdpMid(), candidate.getSdpMLineIndex()
-                );
-                session.sendMessage(new org.springframework.web.socket.TextMessage(message));
-                log.debug("ICE candidate 전송 완료: sessionId={}", session.getId());
-            }
-        } catch (Exception e) {
-            log.error("ICE candidate 전송 실패: sessionId={}", session.getId(), e);
-        }
-    }
-
-    /**
-     * Offer 처리
-     */
-    public String processOffer(String sessionId, String sdpOffer) {
-        try {
-            log.info("Offer 처리 시작: sessionId={}", sessionId);
+            log.info("통화 시작: sessionId={}", sessionId);
 
             WebRtcEndpoint endpoint = userEndpoints.get(sessionId);
             if (endpoint == null) {
-                throw new RuntimeException("사용자 엔드포인트 없음: " + sessionId);
+                throw new RuntimeException("엔드포인트를 찾을 수 없습니다: " + sessionId);
             }
 
-            // SDP Offer 처리하고 Answer 생성
+            // SDP Offer 생성
+            String sdpOffer = endpoint.generateOffer();
+            log.info("SDP Offer 생성 완료: sessionId={}", sessionId);
+
+            return sdpOffer;
+
+        } catch (Exception e) {
+            log.error("통화 시작 실패: sessionId={}", sessionId, e);
+            throw new RuntimeException("통화 시작 실패", e);
+        }
+    }
+
+    /**
+     * SDP Offer 처리 (SDP Answer 생성)
+     */
+    public String processOffer(String sessionId, String sdpOffer) {
+        try {
+            log.info("SDP Offer 처리: sessionId={}", sessionId);
+
+            WebRtcEndpoint endpoint = userEndpoints.get(sessionId);
+            if (endpoint == null) {
+                throw new RuntimeException("엔드포인트를 찾을 수 없습니다: " + sessionId);
+            }
+
+            // SDP Answer 생성
             String sdpAnswer = endpoint.processOffer(sdpOffer);
 
-            // ICE gathering 시작
+            // 미디어 플로우 시작
             endpoint.gatherCandidates();
 
-            log.info("Offer 처리 완료: sessionId={}", sessionId);
+            log.info("SDP Answer 생성 완료: sessionId={}", sessionId);
             return sdpAnswer;
 
         } catch (Exception e) {
-            log.error("Offer 처리 실패: sessionId={}", sessionId, e);
+            log.error("SDP Offer 처리 실패: sessionId={}", sessionId, e);
             throw new RuntimeException("Offer 처리 실패", e);
+        }
+    }
+
+    /**
+     * SDP Answer 처리
+     */
+    public void processAnswer(String sessionId, String sdpAnswer) {
+        try {
+            log.info("SDP Answer 처리: sessionId={}", sessionId);
+
+            WebRtcEndpoint endpoint = userEndpoints.get(sessionId);
+            if (endpoint == null) {
+                throw new RuntimeException("엔드포인트를 찾을 수 없습니다: " + sessionId);
+            }
+
+            // SDP Answer 처리
+            endpoint.processAnswer(sdpAnswer);
+
+            // 미디어 플로우 시작
+            endpoint.gatherCandidates();
+
+            log.info("SDP Answer 처리 완료: sessionId={}", sessionId);
+
+        } catch (Exception e) {
+            log.error("SDP Answer 처리 실패: sessionId={}", sessionId, e);
+            throw new RuntimeException("Answer 처리 실패", e);
         }
     }
 
     /**
      * ICE Candidate 추가
      */
-    public void addIceCandidate(String sessionId, JsonNode candidateJson) {
+    public void addIceCandidate(String sessionId, JsonNode candidateData) {
         try {
             WebRtcEndpoint endpoint = userEndpoints.get(sessionId);
             if (endpoint == null) {
-                log.warn("ICE candidate 처리 실패 - 엔드포인트 없음: {}", sessionId);
+                log.warn("엔드포인트를 찾을 수 없음, ICE Candidate 무시: sessionId={}", sessionId);
                 return;
             }
 
-            IceCandidate candidate = new IceCandidate(
-                    candidateJson.get("candidate").asText(),
-                    candidateJson.get("sdpMid").asText(),
-                    candidateJson.get("sdpMLineIndex").asInt()
-            );
+            // JSON에서 ICE Candidate 생성
+            String candidate = candidateData.get("candidate").asText();
+            String sdpMid = candidateData.get("sdpMid").asText();
+            int sdpMLineIndex = candidateData.get("sdpMLineIndex").asInt();
 
-            endpoint.addIceCandidate(candidate);
-            log.debug("ICE candidate 추가 완료: sessionId={}", sessionId);
+            IceCandidate iceCandidate = new IceCandidate(candidate, sdpMid, sdpMLineIndex);
+            endpoint.addIceCandidate(iceCandidate);
+
+            log.debug("ICE Candidate 추가 완료: sessionId={}", sessionId);
 
         } catch (Exception e) {
-            log.error("ICE candidate 처리 실패: sessionId={}", sessionId, e);
+            log.error("ICE Candidate 추가 실패: sessionId={}", sessionId, e);
+            // ICE Candidate 실패는 연결을 중단시키지 않음
+        }
+    }
+
+    /**
+     * 통화 종료
+     */
+    public void stopCommunication(String sessionId) {
+        try {
+            log.info("통화 종료: sessionId={}", sessionId);
+
+            WebRtcEndpoint endpoint = userEndpoints.get(sessionId);
+            if (endpoint != null) {
+                endpoint.release();
+                userEndpoints.remove(sessionId);
+            }
+
+            log.info("통화 종료 완료: sessionId={}", sessionId);
+
+        } catch (Exception e) {
+            log.error("통화 종료 실패: sessionId={}", sessionId, e);
+            throw new RuntimeException("통화 종료 실패", e);
         }
     }
 
@@ -229,23 +261,21 @@ public class KurentoService {
      */
     public void leaveRoom(String sessionId) {
         try {
-            log.info("방 나가기: sessionId={}", sessionId);
-
-            String roomId = sessionRooms.get(sessionId);
+            String roomId = sessionRooms.remove(sessionId);
             if (roomId == null) {
+                log.warn("방 정보를 찾을 수 없음: sessionId={}", sessionId);
                 return;
             }
 
-            // 1. ICE Candidate 처리 중단
-            cleanupIceCandidateHandler(sessionId);
+            log.info("방 나가기: sessionId={}, roomId={}", sessionId, roomId);
 
-            // 2. 엔드포인트 정리
+            // 1. 엔드포인트 정리
             WebRtcEndpoint endpoint = userEndpoints.remove(sessionId);
             if (endpoint != null) {
                 endpoint.release();
             }
 
-            // 3. 방 참가자 목록에서 제거
+            // 2. 방 참가자 목록에서 제거
             Set<String> participants = roomParticipants.get(roomId);
             if (participants != null) {
                 participants.remove(sessionId);
@@ -257,10 +287,9 @@ public class KurentoService {
                         pipeline.release();
                     }
                     roomParticipants.remove(roomId);
+                    log.info("빈 방 정리 완료: roomId={}", roomId);
                 }
             }
-
-            sessionRooms.remove(sessionId);
 
             log.info("방 나가기 완료: sessionId={}", sessionId);
 
@@ -269,19 +298,11 @@ public class KurentoService {
         }
     }
 
-    /**
-     * ICE Candidate 처리기 정리
-     */
-    private void cleanupIceCandidateHandler(String sessionId) {
-        ExecutorService executor = candidateExecutors.remove(sessionId);
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-        candidateQueues.remove(sessionId);
-    }
-
     // === 내부 헬퍼 메서드들 ===
 
+    /**
+     * 방의 미디어 파이프라인 생성 또는 가져오기
+     */
     private MediaPipeline getOrCreatePipeline(String roomId) {
         return roomPipelines.computeIfAbsent(roomId, k -> {
             log.info("새 미디어 파이프라인 생성: roomId={}", roomId);
@@ -289,6 +310,9 @@ public class KurentoService {
         });
     }
 
+    /**
+     * 기존 참가자들과 연결
+     */
     private void connectToExistingParticipants(String roomId, String newSessionId, WebRtcEndpoint newEndpoint) {
         Set<String> participants = roomParticipants.get(roomId);
         if (participants == null) return;
@@ -305,5 +329,37 @@ public class KurentoService {
                 }
             }
         }
+    }
+
+    /**
+     * ICE Candidate를 클라이언트에게 전송
+     */
+    private void sendIceCandidateToClient(String sessionId, IceCandidate candidate) {
+        try {
+            // ICE Candidate를 JSON으로 변환
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode candidateJson = mapper.createObjectNode()
+                    .put("candidate", candidate.getCandidate())
+                    .put("sdpMid", candidate.getSdpMid())
+                    .put("sdpMLineIndex", candidate.getSdpMLineIndex());
+
+            // SignalingHandler를 통해 클라이언트에게 전송
+            signalingHandler.sendIceCandidate(sessionId, candidateJson);
+
+        } catch (Exception e) {
+            log.error("ICE Candidate 전송 중 오류: sessionId={}", sessionId, e);
+        }
+    }
+
+    /**
+     * 서비스 상태 정보 반환
+     */
+    public Map<String, Object> getServiceStatus() {
+        Map<String, Object> status = new ConcurrentHashMap<>();
+        status.put("connectedEndpoints", userEndpoints.size());
+        status.put("activePipelines", roomPipelines.size());
+        status.put("activeRooms", roomParticipants.size());
+        status.put("kurentoClientConnected", kurentoClient != null);
+        return status;
     }
 }

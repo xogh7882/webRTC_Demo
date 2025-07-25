@@ -12,6 +12,7 @@ kurento:
     # 요청 타임아웃 (밀리초)
     request-timeout: 10000
 
+
 # 서버 포트
 server:
   port: 8080

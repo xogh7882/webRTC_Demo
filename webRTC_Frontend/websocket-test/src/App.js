@@ -162,7 +162,7 @@ export default function VideoChat() {
   const connectWebSocket = () => {
     return new Promise((resolve, reject) => {
       console.log('🔌 WebSocket 연결 시도');
-      const websocket = new WebSocket('ws://localhost:8080/signaling');
+      const websocket = new WebSocket('ws://70.12.247.69:8080/signaling');
       
       const timeout = setTimeout(() => {
         websocket.close();

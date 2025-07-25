@@ -1,3 +1,4 @@
+// SignalingHandler.java - Kurento 완전 호환 버전
 
 package com.ssafy.webrtc_backend.util;
 
@@ -7,7 +8,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ssafy.webrtc_backend.service.KurentoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -23,7 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SignalingHandler extends TextWebSocketHandler {
 
     private final KurentoService kurentoService;
-
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -46,14 +45,20 @@ public class SignalingHandler extends TextWebSocketHandler {
                 case "join":
                     handleJoin(session, data);
                     break;
-                case "offer":
-                    handleOffer(session, data);
+                case "call":
+                    handleCall(session);
                     break;
-                case "ice-candidate":
+                case "processOffer":
+                    handleProcessOffer(session, data);
+                    break;
+                case "processAnswer":
+                    handleProcessAnswer(session, data);
+                    break;
+                case "onIceCandidate":
                     handleIceCandidate(session, data);
                     break;
-                case "leave":
-                    handleLeave(session);
+                case "stop":
+                    handleStop(session);
                     break;
                 default:
                     log.warn("알 수 없는 메시지 타입: {}", type);
@@ -72,33 +77,27 @@ public class SignalingHandler extends TextWebSocketHandler {
         // 정리 작업
         sessions.remove(sessionId);
         kurentoService.leaveRoom(sessionId);
-
-        // 다른 참가자들에게 알림
-        notifyParticipantLeft(sessionId);
     }
 
     // === 메시지 핸들러들 ===
 
     private void handleJoin(WebSocketSession session, JsonNode data) throws Exception {
-        String roomId = data.has("roomId") ? data.get("roomId").asText() : "default-room";
+        String roomId = data.has("roomId") ? data.get("roomId").asText() : "default";
         String sessionId = session.getId();
 
         log.info("방 참가 요청: sessionId={}, roomId={}", sessionId, roomId);
 
         try {
-            // Kurento 서비스로 방 참가 처리
+            // Kurento 서비스를 통해 방 참가
             kurentoService.joinRoom(sessionId, roomId, session);
 
-            // 성공 응답 전송
+            // 성공 응답
             ObjectNode response = objectMapper.createObjectNode();
             response.put("type", "joined");
             response.put("roomId", roomId);
-            response.put("sessionId", sessionId);
-
             session.sendMessage(new TextMessage(response.toString()));
 
-            // 다른 참가자들에게 새 참가자 알림
-            notifyParticipantJoined(roomId, sessionId, session);
+            log.info("방 참가 완료: sessionId={}, roomId={}", sessionId, roomId);
 
         } catch (Exception e) {
             log.error("방 참가 실패: sessionId={}, roomId={}", sessionId, roomId, e);
@@ -106,102 +105,138 @@ public class SignalingHandler extends TextWebSocketHandler {
         }
     }
 
-    private void handleOffer(WebSocketSession session, JsonNode data) throws Exception {
+    private void handleCall(WebSocketSession session) throws Exception {
         String sessionId = session.getId();
-        String sdpOffer = data.get("data").get("sdp").asText();
-
-        log.info("Offer 처리 요청: sessionId={}", sessionId);
+        log.info("통화 요청: sessionId={}", sessionId);
 
         try {
-            // Kurento로 SDP Offer 처리
-            String sdpAnswer = kurentoService.processOffer(sessionId, sdpOffer);
+            // Kurento 서비스를 통해 통화 시작
+            String sdpOffer = kurentoService.startCommunication(sessionId);
 
-            // Answer 응답 전송
-            ObjectNode response = objectMapper.createObjectNode();
-            response.put("type", "answer");
+            if (sdpOffer != null) {
+                // SDP Offer를 클라이언트에게 전송
+                ObjectNode response = objectMapper.createObjectNode();
+                response.put("type", "startCommunication");
+                response.put("sdpOffer", sdpOffer);
+                session.sendMessage(new TextMessage(response.toString()));
 
-            ObjectNode answerData = objectMapper.createObjectNode();
-            answerData.put("type", "answer");
-            answerData.put("sdp", sdpAnswer);
-            response.set("data", answerData);
-
-            session.sendMessage(new TextMessage(response.toString()));
-
-            log.info("Answer 전송 완료: sessionId={}", sessionId);
+                log.info("SDP Offer 전송 완료: sessionId={}", sessionId);
+            }
 
         } catch (Exception e) {
-            log.error("Offer 처리 실패: sessionId={}", sessionId, e);
+            log.error("통화 시작 실패: sessionId={}", sessionId, e);
+            sendErrorMessage(session, "통화 시작 실패: " + e.getMessage());
+        }
+    }
+
+    private void handleProcessOffer(WebSocketSession session, JsonNode data) throws Exception {
+        String sessionId = session.getId();
+        String sdpOffer = data.get("sdpOffer").asText();
+
+        log.info("SDP Offer 처리: sessionId={}", sessionId);
+
+        try {
+            // Kurento 서비스를 통해 SDP Offer 처리
+            String sdpAnswer = kurentoService.processOffer(sessionId, sdpOffer);
+
+            if (sdpAnswer != null) {
+                // SDP Answer를 클라이언트에게 전송
+                ObjectNode response = objectMapper.createObjectNode();
+                response.put("type", "processAnswer");
+                response.put("sdpAnswer", sdpAnswer);
+                session.sendMessage(new TextMessage(response.toString()));
+
+                log.info("SDP Answer 전송 완료: sessionId={}", sessionId);
+            }
+
+        } catch (Exception e) {
+            log.error("SDP Offer 처리 실패: sessionId={}", sessionId, e);
             sendErrorMessage(session, "Offer 처리 실패: " + e.getMessage());
+        }
+    }
+
+    private void handleProcessAnswer(WebSocketSession session, JsonNode data) throws Exception {
+        String sessionId = session.getId();
+        String sdpAnswer = data.get("sdpAnswer").asText();
+
+        log.info("SDP Answer 처리: sessionId={}", sessionId);
+
+        try {
+            // Kurento 서비스를 통해 SDP Answer 처리
+            kurentoService.processAnswer(sessionId, sdpAnswer);
+            log.info("SDP Answer 처리 완료: sessionId={}", sessionId);
+
+        } catch (Exception e) {
+            log.error("SDP Answer 처리 실패: sessionId={}", sessionId, e);
+            sendErrorMessage(session, "Answer 처리 실패: " + e.getMessage());
         }
     }
 
     private void handleIceCandidate(WebSocketSession session, JsonNode data) throws Exception {
         String sessionId = session.getId();
-        JsonNode candidateData = data.get("data");
+        JsonNode candidateData = data.get("candidate");
 
         log.debug("ICE Candidate 처리: sessionId={}", sessionId);
 
         try {
+            // Kurento 서비스를 통해 ICE Candidate 처리
             kurentoService.addIceCandidate(sessionId, candidateData);
+            log.debug("ICE Candidate 처리 완료: sessionId={}", sessionId);
 
         } catch (Exception e) {
             log.error("ICE Candidate 처리 실패: sessionId={}", sessionId, e);
+            // ICE Candidate 실패는 연결을 중단시키지 않음
         }
     }
 
-    private void handleLeave(WebSocketSession session) throws Exception {
+    private void handleStop(WebSocketSession session) throws Exception {
         String sessionId = session.getId();
+        log.info("통화 종료 요청: sessionId={}", sessionId);
 
-        log.info("방 나가기 요청: sessionId={}", sessionId);
+        try {
+            // Kurento 서비스를 통해 통화 종료
+            kurentoService.stopCommunication(sessionId);
 
-        kurentoService.leaveRoom(sessionId);
-        notifyParticipantLeft(sessionId);
+            // 종료 확인 응답
+            ObjectNode response = objectMapper.createObjectNode();
+            response.put("type", "stopCommunication");
+            session.sendMessage(new TextMessage(response.toString()));
 
-        // 나가기 확인 응답
-        ObjectNode response = objectMapper.createObjectNode();
-        response.put("type", "left");
-        response.put("sessionId", sessionId);
+            log.info("통화 종료 완료: sessionId={}", sessionId);
 
-        session.sendMessage(new TextMessage(response.toString()));
+        } catch (Exception e) {
+            log.error("통화 종료 실패: sessionId={}", sessionId, e);
+            sendErrorMessage(session, "통화 종료 실패: " + e.getMessage());
+        }
     }
 
-    // === 알림 메서드들 ===
+    // === 유틸리티 메서드들 ===
 
-    private void notifyParticipantJoined(String roomId, String newSessionId, WebSocketSession newSession) {
-        // 실제로는 방별 참가자 목록을 관리해야 하지만,
-        // 여기서는 간단히 모든 세션에 알림 (실제 구현에서는 방별로 필터링 필요)
+    /**
+     * ICE Candidate를 클라이언트에게 전송
+     */
+    public void sendIceCandidate(String sessionId, JsonNode candidate) {
+        WebSocketSession session = sessions.get(sessionId);
+        if (session != null && session.isOpen()) {
+            try {
+                ObjectNode message = objectMapper.createObjectNode();
+                message.put("type", "iceCandidate");
+                message.set("candidate", candidate);
 
-        ObjectNode notification = objectMapper.createObjectNode();
-        notification.put("type", "user-joined");
-        notification.put("sessionId", newSessionId);
+                session.sendMessage(new TextMessage(message.toString()));
+                log.debug("ICE Candidate 전송 완료: sessionId={}", sessionId);
 
-        sessions.values().forEach(session -> {
-            if (!session.getId().equals(newSessionId) && session.isOpen()) {
-                try {
-                    session.sendMessage(new TextMessage(notification.toString()));
-                } catch (Exception e) {
-                    log.error("참가자 알림 전송 실패", e);
-                }
+            } catch (Exception e) {
+                log.error("ICE Candidate 전송 실패: sessionId={}", sessionId, e);
             }
-        });
+        } else {
+            log.warn("세션이 없거나 닫혀있음: sessionId={}", sessionId);
+        }
     }
 
-    private void notifyParticipantLeft(String leftSessionId) {
-        ObjectNode notification = objectMapper.createObjectNode();
-        notification.put("type", "user-left");
-        notification.put("sessionId", leftSessionId);
-
-        sessions.values().forEach(session -> {
-            if (session.isOpen()) {
-                try {
-                    session.sendMessage(new TextMessage(notification.toString()));
-                } catch (Exception e) {
-                    log.error("참가자 나감 알림 전송 실패", e);
-                }
-            }
-        });
-    }
-
+    /**
+     * 에러 메시지 전송
+     */
     private void sendErrorMessage(WebSocketSession session, String error) {
         try {
             ObjectNode errorResponse = objectMapper.createObjectNode();
@@ -209,8 +244,36 @@ public class SignalingHandler extends TextWebSocketHandler {
             errorResponse.put("message", error);
 
             session.sendMessage(new TextMessage(errorResponse.toString()));
+            log.info("에러 메시지 전송: {}", error);
+
         } catch (Exception e) {
             log.error("에러 메시지 전송 실패", e);
         }
+    }
+
+    /**
+     * 특정 세션에게 메시지 전송
+     */
+    public void sendMessage(String sessionId, ObjectNode message) {
+        WebSocketSession session = sessions.get(sessionId);
+        if (session != null && session.isOpen()) {
+            try {
+                session.sendMessage(new TextMessage(message.toString()));
+                log.debug("메시지 전송 완료: sessionId={}, type={}",
+                        sessionId, message.get("type").asText());
+
+            } catch (Exception e) {
+                log.error("메시지 전송 실패: sessionId={}", sessionId, e);
+            }
+        } else {
+            log.warn("세션이 없거나 닫혀있음: sessionId={}", sessionId);
+        }
+    }
+
+    /**
+     * 연결된 모든 세션 정보 반환
+     */
+    public int getConnectedSessionCount() {
+        return sessions.size();
     }
 }
