@@ -12,11 +12,11 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketConfigurer {
 
-    private static SignalingHandler signalingHandler;
+    private final SignalingHandler signalingHandler;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(new SignalingHandler(), "/signaling")
+        registry.addHandler(signalingHandler, "/signaling")
                 .setAllowedOrigins("*");
     }
 }

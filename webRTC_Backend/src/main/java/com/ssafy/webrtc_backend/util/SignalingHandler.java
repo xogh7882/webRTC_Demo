@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class SignalingHandler extends TextWebSocketHandler {
 
-    private static KurentoService kurentoService;
+    private final KurentoService kurentoService;
 
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
