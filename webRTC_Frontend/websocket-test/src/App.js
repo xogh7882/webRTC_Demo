@@ -1,69 +1,39 @@
-import { useState, useEffect, useRef } from 'react';
+// App.js - Kurento SDP 교환 로직 추가
+
+import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 
-export default function VideoChat() {
-  const [ws, setWs] = useState(null);
+function App() {
+  // 상태 관리
   const [connected, setConnected] = useState(false);
   const [inCall, setInCall] = useState(false);
-  const [roomId, setRoomId] = useState('room1');
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [connectionState, setConnectionState] = useState('disconnected');
   const [error, setError] = useState(null);
-  
+  const [roomId, setRoomId] = useState('room123');
+  const [ws, setWs] = useState(null);
+
+  // Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const pcRef = useRef(null);
   const localStreamRef = useRef(null);
   const wsRef = useRef(null);
+  const pcRef = useRef(null);
 
-  const iceServers = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]
-  };
-
-  // 현재 시간 업데이트
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // 컴포넌트 언마운트 시 정리
+  // cleanup
   useEffect(() => {
     return () => {
       cleanup();
     };
   }, []);
 
-  // 시간 포맷팅
-  const formatTime = (date) => {
-    return date.toLocaleTimeString('ko-KR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  };
-
-  // 날짜 포맷팅
-  const formatDate = (date) => {
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
-  // 전체 정리 함수
+  // 정리 함수
   const cleanup = () => {
-    console.log('🧹 전체 정리 시작');
+    console.log('🧹 리소스 정리 시작');
     
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         track.stop();
-        console.log('로컬 트랙 중지:', track.kind);
+        console.log('🔇 트랙 정지:', track.kind);
       });
       localStreamRef.current = null;
     }
@@ -71,13 +41,13 @@ export default function VideoChat() {
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
-      console.log('PeerConnection 종료');
+      console.log('📡 PeerConnection 종료');
     }
     
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
-      console.log('WebSocket 연결 종료');
+      console.log('🔌 WebSocket 연결 종료');
     }
     
     if (localVideoRef.current) {
@@ -106,55 +76,22 @@ export default function VideoChat() {
     try {
       console.log('📹 미디어 스트림 요청');
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        }, 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true
-        }
+        video: true, 
+        audio: true 
       });
       
       console.log('✅ 미디어 스트림 획득 성공');
-      console.log('📊 트랙 정보:', stream.getTracks().map(track => ({
-        kind: track.kind,
-        enabled: track.enabled,
-        readyState: track.readyState
-      })));
-      
       localStreamRef.current = stream;
       
       if (localVideoRef.current) {
-        const videoElement = localVideoRef.current;
-        videoElement.srcObject = stream;
-        
-        // 안전한 재생 시도
-        try {
-          await videoElement.play();
-          console.log('🎬 로컬 비디오 재생 시작');
-        } catch (playError) {
-          console.warn('⚠️ 로컬 비디오 자동 재생 실패:', playError.message);
-          // 사용자 상호작용 후 재생하도록 설정
-          videoElement.muted = true;
-          await videoElement.play();
-        }
+        localVideoRef.current.srcObject = stream;
+        console.log('🎬 로컬 비디오 설정 완료');
       }
       
       return stream;
     } catch (error) {
-      console.warn('⚠️ 미디어 접근 실패, 오디오만 시도:', error.message);
-      
-      try {
-        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        localStreamRef.current = audioStream;
-        console.log('🎤 오디오만 스트림 획득');
-        return audioStream;
-      } catch (audioError) {
-        console.warn('⚠️ 오디오도 실패, 수신 전용 모드:', audioError.message);
-        return null;
-      }
+      console.error('❌ 미디어 스트림 획득 실패:', error);
+      throw error;
     }
   };
 
@@ -195,7 +132,7 @@ export default function VideoChat() {
       websocket.onmessage = async (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log('📩 메시지 수신:', message.type);
+          console.log('📩 메시지 수신:', message.type, message);
           await handleWebSocketMessage(message);
         } catch (error) {
           console.error('❌ 메시지 처리 에러:', error);
@@ -208,212 +145,171 @@ export default function VideoChat() {
   const handleWebSocketMessage = async (message) => {
     switch (message.type) {
       case 'joined':
-        console.log('🏠 방 참가 완료:', message.roomId);
+        console.log('🏠 방 참가 성공');
         setConnectionState('joined');
+        // 방 참가 후 통화 시작 요청
+        setTimeout(() => {
+          startCall();
+        }, 500);
         break;
         
-      case 'user-joined':
-        console.log('👤 새 사용자 참가:', message.sessionId);
-        await createOffer();
+      case 'startCommunication':
+        console.log('📞 통화 시작 - SDP Offer 수신');
+        await handleOffer(message.sdpOffer);
         break;
         
-      case 'offer':
-        console.log('📨 Offer 수신');
-        await handleOffer(message.data);
+      case 'processAnswer':
+        console.log('📞 SDP Answer 수신');
+        await handleAnswer(message.sdpAnswer);
         break;
         
-      case 'answer':
-        console.log('📨 Answer 수신');
-        await handleAnswer(message.data);
-        break;
-        
-      case 'ice-candidate':
+      case 'iceCandidate':
         console.log('🧊 ICE Candidate 수신');
-        await handleIceCandidate(message.data);
-        break;
-        
-      case 'user-left':
-        console.log('👋 사용자 나감:', message.sessionId);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = null;
-        }
-        setInCall(false);
-        setConnectionState('connected');
+        await handleIceCandidate(message.candidate);
         break;
         
       case 'error':
-        console.error('🚨 서버 에러:', message.message);
+        console.error('❌ 서버 에러:', message.message);
         handleError('서버 에러: ' + message.message);
         break;
         
       default:
-        console.warn('🤷 알 수 없는 메시지:', message.type);
+        console.warn('⚠️ 알 수 없는 메시지 타입:', message.type);
     }
   };
 
   // PeerConnection 생성
   const createPeerConnection = () => {
-    console.log('🔗 PeerConnection 생성');
-    const pc = new RTCPeerConnection(iceServers);
+    console.log('📡 PeerConnection 생성');
     
+    const configuration = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+    
+    const pc = new RTCPeerConnection(configuration);
+
     // ICE Candidate 이벤트
     pc.onicecandidate = (event) => {
       if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
         console.log('🧊 ICE Candidate 전송');
         wsRef.current.send(JSON.stringify({
-          type: 'ice-candidate',
-          data: event.candidate
+          type: 'onIceCandidate',
+          candidate: {
+            candidate: event.candidate.candidate,
+            sdpMid: event.candidate.sdpMid,
+            sdpMLineIndex: event.candidate.sdpMLineIndex
+          }
         }));
-      } else if (!event.candidate) {
-        console.log('🧊 ICE Gathering 완료');
       }
     };
-    
+
     // 원격 스트림 수신
     pc.ontrack = (event) => {
-      console.log('🎉 원격 스트림 수신!');
+      console.log('📺 원격 스트림 수신');
       const [remoteStream] = event.streams;
       
-      console.log('📊 원격 스트림 정보:', {
-        id: remoteStream.id,
-        tracks: remoteStream.getTracks().map(track => ({
-          kind: track.kind,
-          enabled: track.enabled,
-          readyState: track.readyState
-        }))
-      });
-      
       if (remoteVideoRef.current) {
-        const videoElement = remoteVideoRef.current;
-        
-        // 기존 재생을 안전하게 중지
-        videoElement.pause();
-        videoElement.srcObject = null;
-        
-        // 새 스트림 설정
-        videoElement.srcObject = remoteStream;
-        
-        // 짧은 지연 후 재생 시도
-        setTimeout(() => {
-          videoElement.play().then(() => {
-            console.log('🎬 원격 비디오 재생 시작');
-            setInCall(true);
-            setConnectionState('in-call');
-          }).catch(err => {
-            console.error('❌ 원격 비디오 재생 실패:', err);
-            // 재생 실패해도 연결은 성공한 것으로 처리
-            setInCall(true);
-            setConnectionState('in-call');
-          });
-        }, 100);
+        remoteVideoRef.current.srcObject = remoteStream;
+        console.log('🎬 원격 비디오 설정 완료');
+        setInCall(true);
+        setConnectionState('in-call');
       }
     };
 
     // 연결 상태 모니터링
     pc.oniceconnectionstatechange = () => {
       console.log('🧊 ICE 연결 상태:', pc.iceConnectionState);
-      if (pc.iceConnectionState === 'failed') {
-        console.error('❌ ICE 연결 실패');
-        handleError('ICE 연결 실패');
-      }
     };
 
     pc.onconnectionstatechange = () => {
       console.log('🔗 연결 상태:', pc.connectionState);
-      if (pc.connectionState === 'failed') {
-        console.error('❌ PeerConnection 실패');
-        handleError('PeerConnection 실패');
-      }
     };
-    
-    // 로컬 스트림 트랙 추가
-    if (localStreamRef.current) {
-      console.log('📤 로컬 트랙 추가');
-      localStreamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, localStreamRef.current);
-        console.log('➕ 트랙 추가됨:', track.kind);
-      });
-    } else {
-      console.log('⚠️ 로컬 스트림 없음 (수신 전용 모드)');
-    }
-    
+
+    pcRef.current = pc;
     return pc;
   };
 
-  // Offer 생성
-  const createOffer = async () => {
-    try {
-      console.log('📤 Offer 생성 시작');
-      pcRef.current = createPeerConnection();
-      
-      const offer = await pcRef.current.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      });
-      
-      await pcRef.current.setLocalDescription(offer);
-      console.log('✅ Local Description 설정 완료');
-      
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'offer',
-          data: offer
-        }));
-        console.log('📤 Offer 전송 완료');
-      } else {
-        throw new Error('WebSocket 연결 없음');
-      }
-    } catch (error) {
-      console.error('❌ Offer 생성 실패:', error);
-      handleError('Offer 생성 실패', error);
+  // 통화 시작 (call 메시지 전송)
+  const startCall = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('📞 통화 시작 요청');
+      wsRef.current.send(JSON.stringify({
+        type: 'call'
+      }));
     }
   };
 
-  // Offer 처리
-  const handleOffer = async (offer) => {
+  // Offer 처리 (Kurento에서 받은 SDP Offer)
+  const handleOffer = async (sdpOffer) => {
     try {
-      console.log('📥 Offer 처리 시작');
-      pcRef.current = createPeerConnection();
+      console.log('📥 SDP Offer 처리 시작');
       
-      await pcRef.current.setRemoteDescription(offer);
+      // PeerConnection 생성
+      const pc = createPeerConnection();
+      
+      // 로컬 스트림을 PeerConnection에 추가
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          pc.addTrack(track, localStreamRef.current);
+          console.log('🎵 트랙 추가:', track.kind);
+        });
+      }
+      
+      // Remote Description 설정
+      await pc.setRemoteDescription({
+        type: 'offer',
+        sdp: sdpOffer
+      });
       console.log('✅ Remote Description 설정 완료');
       
-      const answer = await pcRef.current.createAnswer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      });
-      
-      await pcRef.current.setLocalDescription(answer);
+      // Answer 생성
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
       console.log('✅ Answer 생성 완료');
       
+      // Answer를 서버로 전송
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
-          type: 'answer',
-          data: answer
+          type: 'processAnswer',
+          sdpAnswer: answer.sdp
         }));
         console.log('📤 Answer 전송 완료');
-      } else {
-        throw new Error('WebSocket 연결 없음');
       }
+      
     } catch (error) {
       console.error('❌ Offer 처리 실패:', error);
-      handleError('Offer 처리 실패', error);
+      handleError('Offer 처리 실패: ' + error.message);
     }
   };
 
-  // Answer 처리
-  const handleAnswer = async (answer) => {
+  // Answer 처리 (상대방이 보낸 Answer)
+  const handleAnswer = async (sdpAnswer) => {
     try {
-      console.log('📥 Answer 처리 시작');
+      console.log('📥 SDP Answer 처리 시작');
+      
       if (!pcRef.current) {
-        throw new Error('PeerConnection 없음');
+        // 내가 Offer를 보낸 경우의 PeerConnection 생성
+        const pc = createPeerConnection();
+        
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(track => {
+            pc.addTrack(track, localStreamRef.current);
+          });
+        }
       }
       
-      await pcRef.current.setRemoteDescription(answer);
+      await pcRef.current.setRemoteDescription({
+        type: 'answer',
+        sdp: sdpAnswer
+      });
       console.log('✅ Answer 처리 완료');
+      
     } catch (error) {
       console.error('❌ Answer 처리 실패:', error);
-      handleError('Answer 처리 실패', error);
+      handleError('Answer 처리 실패: ' + error.message);
     }
   };
 
@@ -425,7 +321,11 @@ export default function VideoChat() {
         return;
       }
       
-      await pcRef.current.addIceCandidate(candidate);
+      await pcRef.current.addIceCandidate({
+        candidate: candidate.candidate,
+        sdpMid: candidate.sdpMid,
+        sdpMLineIndex: candidate.sdpMLineIndex
+      });
       console.log('✅ ICE Candidate 추가 완료');
     } catch (error) {
       console.error('❌ ICE Candidate 처리 실패:', error);
@@ -454,7 +354,7 @@ export default function VideoChat() {
       
     } catch (error) {
       console.error('❌ 연결 실패:', error);
-      handleError('연결 실패: ' + error.message, error);
+      handleError('연결 실패: ' + error.message);
       cleanup();
     }
   };
@@ -576,57 +476,42 @@ export default function VideoChat() {
                 <div className="video-label">상대방 화면</div>
                 {!inCall && (
                   <div className="connection-status">
-                    <span className="connecting-text">화상 상담 대기 중</span>
-                    <span className="security-text">보안 연결로 보호됨</span>
+                    <span className="waiting-text">상대방을 기다리는 중...</span>
+                    <span className="security-text">안전한 연결로 보호됩니다</span>
                   </div>
                 )}
               </div>
             </div>
           </div>
-
-          {/* 컨트롤 버튼들 */}
+          
+          {/* 컨트롤 버튼 */}
           <div className="control-buttons">
-            <button className="control-btn mute-btn" onClick={toggleMute} disabled={!localStreamRef.current}>
+            <button className="control-btn" onClick={toggleMute} disabled={!connected}>
               🎤
             </button>
-            <button className="control-btn video-btn" onClick={toggleVideo} disabled={!localStreamRef.current}>
+            <button className="control-btn" onClick={toggleVideo} disabled={!connected}>
               📹
             </button>
-            <button className="control-btn end-call-btn" onClick={disconnect} disabled={!connected}>
+            <button 
+              className="control-btn end-call-btn" 
+              onClick={disconnect}
+              disabled={!connected}
+            >
               📞
             </button>
           </div>
-
-          {/* 연결 상태 및 방 ID 입력 */}
+          
+          {/* 연결 섹션 */}
           <div className="connection-section">
             <div className="room-input">
               <input
                 type="text"
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value)}
-                placeholder="방 ID"
-                disabled={connected}
+                placeholder="방 ID 입력"
                 className="room-id-input"
+                disabled={connected}
               />
-            </div>
-            
-            <div className="connection-button">
-              {!connected ? (
-                <button
-                  onClick={connect}
-                  className="action-btn start-consultation active"
-                  disabled={connectionState === 'connecting'}
-                >
-                  {connectionState === 'connecting' ? '연결 중...' : '연결'}
-                </button>
-              ) : (
-                <button
-                  onClick={disconnect}
-                  className="action-btn start-consultation active"
-                >
-                  종료
-                </button>
-              )}
             </div>
             
             <div className="connection-status-indicator">
@@ -634,12 +519,35 @@ export default function VideoChat() {
                 {getStatusText()}
               </span>
             </div>
+            
+            <div className="connection-button">
+              {!connected ? (
+                <button 
+                  className="action-btn start-consultation"
+                  onClick={connect}
+                  disabled={connectionState === 'connecting'}
+                >
+                  {connectionState === 'connecting' ? '연결 중...' : '상담 시작'}
+                </button>
+              ) : (
+                <button 
+                  className="action-btn start-consultation"
+                  onClick={disconnect}
+                >
+                  연결 종료
+                </button>
+              )}
+            </div>
           </div>
-
+          
           {/* 액션 버튼들 */}
           <div className="action-buttons">
-            <button className="action-btn create-link">초대 링크 생성</button>
-            <button className="action-btn consultation-settings">화상상담 설정</button>
+            <button className="action-btn create-link">
+              링크 생성
+            </button>
+            <button className="action-btn consultation-settings">
+              상담 설정
+            </button>
           </div>
         </div>
 
@@ -647,17 +555,13 @@ export default function VideoChat() {
         <div className="sidebar">
           {/* 시간 표시 */}
           <div className="time-display">
-            <div className="current-time">
-              오후 {formatTime(currentTime)}
-            </div>
-            <div className="current-date">
-              {formatDate(currentTime)}
-            </div>
+            <div className="current-time">14:30</div>
+            <div className="current-date">2024년 1월 15일 월요일</div>
           </div>
-
+          
           {/* 캘린더 */}
           <div className="calendar">
-            <div className="calendar-header">2025년 7월</div>
+            <div className="calendar-header">1월 2024</div>
             <div className="calendar-grid">
               <div className="calendar-day-header">일</div>
               <div className="calendar-day-header">월</div>
@@ -667,23 +571,29 @@ export default function VideoChat() {
               <div className="calendar-day-header">금</div>
               <div className="calendar-day-header">토</div>
               
-              {/* 7월 달력 날짜들 */}
-              {Array.from({length: 31}, (_, i) => (
-                <div key={i + 1} className={`calendar-day ${i + 1 === 25 ? 'today' : ''}`}>
+              {Array.from({ length: 31 }, (_, i) => (
+                <div 
+                  key={i + 1} 
+                  className={`calendar-day ${i === 14 ? 'today' : ''}`}
+                >
                   {i + 1}
                 </div>
               ))}
             </div>
-            <div className="calendar-note">상담 일정이 있는 날짜를 클릭하세요</div>
+            <div className="calendar-note">오늘 일정이 없습니다</div>
           </div>
-
-          {/* 오늘의 상담 일정 */}
+          
+          {/* 상담 스케줄 */}
           <div className="consultation-schedule">
-            <h3>오늘의 상담 일정</h3>
-            <div className="no-schedule">오늘 예정인 상담이 없습니다</div>
+            <h3>상담 일정</h3>
+            <div className="no-schedule">
+              예정된 상담이 없습니다
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+export default App;
