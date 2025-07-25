@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis-matcher
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      POSTGRES_DB: handi
+      POSTGRES_USER: handi
+      POSTGRES_PASSWORD: ssafyhandia306
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U handi"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "2000:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Kurento Media Server 추가
+  kurento:
+    image: kurento/kurento-media-server:latest
+    container_name: kurento-media-server
+    ports:
+      - "8888:8888"                    # WebSocket 시그널링
+      - "5000-5050:5000-5050/udp"      # RTP 미디어 스트림
+    environment:
+      - GST_DEBUG=Kurento*:5
+    volumes:
+      - kurento_logs:/var/log/kurento-media-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/kurento"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:
+  kurento_logs:

@@ -1,1 +1,23 @@
-spring.application.name=webRTC_Backend
+spring:
+  application:
+    name: webRTC_Backend
+
+# Kurento 설정
+kurento:
+  client:
+    # Kurento Media Server WebSocket URL (Docker 컨테이너명 사용)
+    ws-url: ws://localhost:8888/kurento
+    # 연결 타임아웃 (밀리초)
+    connection-timeout: 20000
+    # 요청 타임아웃 (밀리초)
+    request-timeout: 10000
+
+# 서버 포트
+server:
+  port: 8080
+
+# 로깅 설정 (개발용)
+logging:
+  level:
+    org.kurento: DEBUG
+    com.ssafy.webrtc_backend: DEBUG
