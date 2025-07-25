@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import './App.css';
 
 export default function VideoChat() {
   const [ws, setWs] = useState(null);
   const [connected, setConnected] = useState(false);
   const [inCall, setInCall] = useState(false);
   const [roomId, setRoomId] = useState('room1');
+  const [currentTime, setCurrentTime] = useState(new Date());
   
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -17,6 +19,32 @@ export default function VideoChat() {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' }
     ]
+  };
+
+  // 현재 시간 업데이트
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 시간 포맷팅
+  const formatTime = (date) => {
+    return date.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  // 날짜 포맷팅
+  const formatDate = (date) => {
+    return date.toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
   };
 
   useEffect(() => {
@@ -53,7 +81,7 @@ export default function VideoChat() {
         }
       }
 
-      const websocket = new WebSocket('ws://192.168.1.103:8080/signaling');
+      const websocket = new WebSocket('ws://localhost:8080/signaling');
       
       websocket.onopen = () => {
         console.log('웹소켓 연결됨');
@@ -255,65 +283,183 @@ export default function VideoChat() {
     setInCall(false);
   };
 
+  const toggleMute = () => {
+    if (localStreamRef.current) {
+      const audioTracks = localStreamRef.current.getAudioTracks();
+      audioTracks.forEach(track => {
+        track.enabled = !track.enabled;
+      });
+    }
+  };
+
+  const toggleVideo = () => {
+    if (localStreamRef.current) {
+      const videoTracks = localStreamRef.current.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.enabled = !track.enabled;
+      });
+    }
+  };
+
   return (
-    <div className="max-w-4xl mx-auto mt-8 p-6 bg-white rounded-lg shadow-lg">
-      <h1 className="text-3xl font-bold mb-6 text-center">WebRTC 화상채팅</h1>
-      
-      <div className="mb-6 flex items-center justify-center space-x-4">
-        <input
-          type="text"
-          value={roomId}
-          onChange={(e) => setRoomId(e.target.value)}
-          placeholder="방 ID"
-          disabled={connected}
-          className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-        />
-        
-        {!connected ? (
-          <button
-            onClick={connect}
-            className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-          >
-            연결
-          </button>
-        ) : (
-          <button
-            onClick={disconnect}
-            className="px-6 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-          >
-            종료
-          </button>
-        )}
-      </div>
-
-      <div className="mb-4 text-center">
-        <span className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${
-          connected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-        }`}>
-          {connected ? (inCall ? '통화 중' : '연결됨') : '연결 안됨'}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="text-center">
-          <h3 className="text-lg font-semibold mb-2">내 화면</h3>
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            playsInline
-            className="w-full h-64 bg-black rounded-lg"
-          />
+    <div className="video-call-app">
+      {/* 헤더 */}
+      <header className="app-header">
+        <div className="logo">
+          <div className="logo-icon"></div>
         </div>
-        
-        <div className="text-center">
-          <h3 className="text-lg font-semibold mb-2">상대방 화면</h3>
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-full h-64 bg-black rounded-lg"
-          />
+        <nav className="nav-menu">
+          <span>Products</span>
+          <span>Solutions</span>
+          <span>Community</span>
+          <span>Resources</span>
+          <span>Pricing</span>
+          <span>Contact</span>
+          <span>Link</span>
+        </nav>
+        <div className="auth-buttons">
+          <button className="sign-in">Sign in</button>
+          <button className="register">Register</button>
+        </div>
+      </header>
+
+      {/* 메인 콘텐츠 */}
+      <div className="main-content">
+        {/* 왼쪽 화상통화 영역 */}
+        <div className="video-section">
+          <h1 className="section-title">화상 상담</h1>
+          
+          {/* 비디오 컨테이너 */}
+          <div className="video-container">
+            <div className="video-grid">
+              {/* 내 화면 */}
+              <div className="video-item my-video">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="video-element"
+                />
+                <div className="video-label">내 화면</div>
+              </div>
+              
+              {/* 상대방 화면 */}
+              <div className="video-item remote-video">
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className="video-element"
+                />
+                <div className="video-label">상대방 화면</div>
+                {!inCall && (
+                  <div className="connection-status">
+                    <span className="connecting-text">화상 상담 진행 중</span>
+                    <span className="security-text">보호되어 업로되었습니다</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 컨트롤 버튼들 */}
+          <div className="control-buttons">
+            <button className="control-btn mute-btn" onClick={toggleMute}>
+              🎤
+            </button>
+            <button className="control-btn video-btn" onClick={toggleVideo}>
+              📹
+            </button>
+            <button className="control-btn end-call-btn" onClick={disconnect}>
+              📞
+            </button>
+          </div>
+
+          {/* 연결 상태 및 방 ID 입력 */}
+          <div className="connection-section">
+            <div className="room-input">
+              <input
+                type="text"
+                value={roomId}
+                onChange={(e) => setRoomId(e.target.value)}
+                placeholder="방 ID"
+                disabled={connected}
+                className="room-id-input"
+              />
+            </div>
+            
+            <div className="connection-button">
+              {!connected ? (
+                <button
+                  onClick={connect}
+                  className="action-btn start-consultation active"
+                >
+                  연결
+                </button>
+              ) : (
+                <button
+                  onClick={disconnect}
+                  className="action-btn start-consultation active"
+                >
+                  종료
+                </button>
+              )}
+            </div>
+            
+            <div className="connection-status-indicator">
+              <span className={`status-badge ${connected ? (inCall ? 'in-call' : 'connected') : 'disconnected'}`}>
+                {connected ? (inCall ? '통화 중' : '연결됨') : '연결 안됨'}
+              </span>
+            </div>
+          </div>
+
+          {/* 액션 버튼들 */}
+          <div className="action-buttons">
+            <button className="action-btn create-link">초대 링크 생성</button>
+            <button className="action-btn consultation-settings">화상상담 설정</button>
+          </div>
+        </div>
+
+        {/* 오른쪽 사이드바 */}
+        <div className="sidebar">
+          {/* 시간 표시 */}
+          <div className="time-display">
+            <div className="current-time">
+              오후 {formatTime(currentTime)}
+            </div>
+            <div className="current-date">
+              {formatDate(currentTime)}
+            </div>
+          </div>
+
+          {/* 캘린더 */}
+          <div className="calendar">
+            <div className="calendar-header">2025년 7월</div>
+            <div className="calendar-grid">
+              <div className="calendar-day-header">일</div>
+              <div className="calendar-day-header">월</div>
+              <div className="calendar-day-header">화</div>
+              <div className="calendar-day-header">수</div>
+              <div className="calendar-day-header">목</div>
+              <div className="calendar-day-header">금</div>
+              <div className="calendar-day-header">토</div>
+              
+              {/* 7월 달력 날짜들 */}
+              {Array.from({length: 31}, (_, i) => (
+                <div key={i + 1} className={`calendar-day ${i + 1 === 18 ? 'today' : ''}`}>
+                  {i + 1}
+                </div>
+              ))}
+            </div>
+            <div className="calendar-note">상담 일정이 있는 날짜를 클릭하세요</div>
+          </div>
+
+          {/* 오늘의 상담 일정 */}
+          <div className="consultation-schedule">
+            <h3>오늘의 상담 일정</h3>
+            <div className="no-schedule">오늘 예정인 상담이 없습니다</div>
+          </div>
         </div>
       </div>
     </div>
