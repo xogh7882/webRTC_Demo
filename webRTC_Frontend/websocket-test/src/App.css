@@ -1,17 +1,25 @@
-/* CSS Variables for Color Palette */
+/* CSS 변수들 */
 :root {
-  --color-light-green: #D8EBE9;
-  --color-medium-green: #92C3BF;
-  --color-dark-blue: #407C86;
-  --color-light-gray: #FEF9F3;
-  --color-medium-gray: #DADADA;
-  --color-white: #FFFFFF;
-  --color-red: #E74C3C;
-  --color-black: #333333;
-  --color-text-dark: #2C3E50;
-  --color-border: #E0E0E0;
+  --color-primary: #007bff;
+  --color-secondary: #6c757d;
+  --color-success: #28a745;
+  --color-danger: #dc3545;
+  --color-warning: #ffc107;
+  --color-info: #17a2b8;
+  --color-light: #f8f9fa;
+  --color-dark: #343a40;
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-gray: #6c757d;
+  --color-light-gray: #f5f5f5;
+  --color-border: #e0e0e0;
+  --color-text-dark: #333333;
+  --color-text-light: #666666;
+  --color-blue: #4285f4;
+  --color-dark-blue: #1a1a2e;
 }
 
+/* Reset 및 기본 스타일 */
 * {
   margin: 0;
   padding: 0;
@@ -24,50 +32,43 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--color-white);
-  color: var(--color-text-dark);
+  background-color: var(--color-light);
 }
 
-/* App Container */
 .video-call-app {
   min-height: 100vh;
-  border: 2px solid #4CAF50;
-  background-color: var(--color-white);
+  display: flex;
+  flex-direction: column;
 }
 
 /* Header */
 .app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 24px;
   background-color: var(--color-white);
   border-bottom: 1px solid var(--color-border);
+  padding: 0 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .logo {
   display: flex;
   align-items: center;
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--color-text-dark);
 }
 
 .logo-icon {
   width: 32px;
   height: 32px;
-  background-color: var(--color-dark-blue);
-  border-radius: 4px;
-  position: relative;
-}
-
-.logo-icon::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 16px;
-  height: 16px;
-  background-color: var(--color-white);
-  border-radius: 2px;
+  background-color: var(--color-blue);
+  border-radius: 8px;
+  margin-right: 12px;
 }
 
 .nav-menu {
@@ -77,14 +78,15 @@ body {
 }
 
 .nav-menu span {
+  color: var(--color-text-light);
   font-size: 14px;
-  color: var(--color-text-dark);
+  font-weight: 500;
   cursor: pointer;
   transition: color 0.2s;
 }
 
 .nav-menu span:hover {
-  color: var(--color-dark-blue);
+  color: var(--color-text-dark);
 }
 
 .auth-buttons {
@@ -92,7 +94,7 @@ body {
   gap: 12px;
 }
 
-.sign-in, .register {
+.auth-buttons button {
   padding: 8px 16px;
   border: 1px solid var(--color-border);
   background-color: var(--color-white);
@@ -133,7 +135,19 @@ body {
   font-size: 32px;
   font-weight: 600;
   color: var(--color-text-dark);
-  margin-bottom: 40px;
+  margin-bottom: 24px;
+}
+
+/* 에러 메시지 */
+.error-message {
+  background-color: #ffe6e6;
+  border: 1px solid #ffcccc;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  color: var(--color-danger);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* Video Container */
@@ -149,16 +163,19 @@ body {
 
 .video-grid {
   display: grid;
-  background-color: white;
   grid-template-columns: 1fr 1fr;
   height: 100%;
-  gap: 8px;
+  background-color: white;
+  color: white;
+  gap: 15px;
+  padding: 8px;
 }
 
 .video-item {
   position: relative;
   background-color: var(--color-dark-blue);
   overflow: hidden;
+  border-radius: 8px;
 }
 
 .video-element {
@@ -166,6 +183,7 @@ body {
   height: 100%;
   object-fit: cover;
   background-color: var(--color-dark-blue);
+  display: block;
 }
 
 .video-label {
@@ -181,11 +199,11 @@ body {
 }
 
 .my-video {
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 .remote-video {
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 .connection-status {
@@ -210,33 +228,6 @@ body {
   opacity: 0.8;
 }
 
-/* Waiting Screen */
-.waiting-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--color-white);
-}
-
-.camera-icon {
-  font-size: 64px;
-  margin-bottom: 24px;
-  opacity: 0.8;
-}
-
-.waiting-text .main-text {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.waiting-text .sub-text {
-  font-size: 14px;
-  opacity: 0.8;
-}
-
 /* Control Buttons */
 .control-buttons {
   display: flex;
@@ -246,34 +237,35 @@ body {
 }
 
 .control-btn {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
   border: none;
-  font-size: 24px;
+  border-radius: 50%;
+  background-color: var(--color-light-gray);
   cursor: pointer;
-  transition: all 0.2s;
+  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.2s;
 }
 
-.mute-btn, .video-btn {
-  background-color: var(--color-medium-gray);
-  color: var(--color-text-dark);
+.control-btn:hover:not(:disabled) {
+  background-color: var(--color-border);
+}
+
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .end-call-btn {
-  background-color: var(--color-red);
+  background-color: var(--color-danger);
   color: var(--color-white);
 }
 
-.control-btn:hover {
-  transform: scale(1.05);
-}
-
-.end-call-btn:hover {
-  background-color: #C0392B;
+.end-call-btn:hover:not(:disabled) {
+  background-color: #c82333;
 }
 
 /* Connection Section */
@@ -281,145 +273,174 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 20px;
-  background-color: var(--color-light-gray);
-  border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 32px;
 }
 
 .room-input {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  justify-content: center;
 }
 
 .room-id-input {
-  flex: 1;
   padding: 12px 16px;
-  border: 2px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 14px;
-  background-color: var(--color-white);
-  transition: border-color 0.2s;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 16px;
+  width: 200px;
+  text-align: center;
 }
 
 .room-id-input:focus {
   outline: none;
-  border-color: var(--color-dark-blue);
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
 }
 
 .room-id-input:disabled {
-  background-color: var(--color-medium-gray);
-  cursor: not-allowed;
+  background-color: var(--color-light-gray);
+  color: var(--color-gray);
 }
 
 .connection-button {
-  text-align: center;
+  display: flex;
+  justify-content: center;
+}
+
+.action-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.start-consultation {
+  background-color: var(--color-blue);
+  color: var(--color-white);
+  min-width: 120px;
+}
+
+.start-consultation:hover:not(:disabled) {
+  background-color: #3367d6;
+}
+
+.start-consultation:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .connection-status-indicator {
-  text-align: center;
+  display: flex;
+  justify-content: center;
 }
 
 .status-badge {
-  display: inline-block;
-  padding: 8px 16px;
+  padding: 6px 12px;
   border-radius: 20px;
   font-size: 14px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.status-badge.connected {
-  background-color: #D4EDDA;
-  color: #155724;
-  border: 2px solid #C3E6CB;
-}
-
-.status-badge.in-call {
-  background-color: #D1ECF1;
-  color: #0C5460;
-  border: 2px solid #BEE5EB;
+  font-weight: 500;
 }
 
 .status-badge.disconnected {
-  background-color: #F8D7DA;
-  color: #721C24;
-  border: 2px solid #F5C6CB;
+  background-color: var(--color-light-gray);
+  color: var(--color-gray);
+}
+
+.status-badge.connecting {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status-badge.connected {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-badge.in-call {
+  background-color: #d1ecf1;
+  color: #0c5460;
+}
+
+.status-badge.error {
+  background-color: #f8d7da;
+  color: #721c24;
 }
 
 /* Action Buttons */
 .action-buttons {
   display: flex;
   gap: 16px;
-  justify-content: flex-start;
+  justify-content: center;
 }
 
-.action-btn {
-  padding: 12px 24px;
-  border: 2px solid var(--color-border);
+.create-link {
   background-color: var(--color-white);
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
   color: var(--color-text-dark);
+  border: 1px solid var(--color-border);
 }
 
-.action-btn.active {
-  background-color: var(--color-red);
-  color: var(--color-white);
-  border-color: var(--color-red);
-}
-
-.action-btn:hover:not(.active) {
+.create-link:hover {
   background-color: var(--color-light-gray);
-  border-color: var(--color-dark-blue);
+}
+
+.consultation-settings {
+  background-color: var(--color-light-gray);
+  color: var(--color-text-dark);
+  border: 1px solid var(--color-border);
+}
+
+.consultation-settings:hover {
+  background-color: var(--color-border);
 }
 
 /* Sidebar */
 .sidebar {
-  width: 400px;
-  background-color: var(--color-light-gray);
-  padding: 40px 32px;
+  width: 320px;
+  background-color: var(--color-light);
   border-left: 1px solid var(--color-border);
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
 }
 
 /* Time Display */
 .time-display {
   text-align: center;
-  margin-bottom: 40px;
+  padding: 24px;
+  background-color: var(--color-white);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
 }
 
 .current-time {
-  font-size: 28px;
-  font-weight: 600;
+  font-size: 32px;
+  font-weight: 700;
   color: var(--color-text-dark);
   margin-bottom: 8px;
 }
 
 .current-date {
-  font-size: 14px;
-  color: #666;
+  font-size: 16px;
+  color: var(--color-text-light);
 }
 
 /* Calendar */
 .calendar {
   background-color: var(--color-white);
   border-radius: 12px;
+  border: 1px solid var(--color-border);
   padding: 24px;
-  margin-bottom: 32px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .calendar-header {
   font-size: 18px;
   font-weight: 600;
+  color: var(--color-text-dark);
   text-align: center;
   margin-bottom: 20px;
-  color: var(--color-text-dark);
 }
 
 .calendar-grid {
@@ -433,55 +454,56 @@ body {
   text-align: center;
   font-size: 12px;
   font-weight: 600;
-  color: #666;
-  padding: 8px 4px;
+  color: var(--color-text-light);
+  padding: 8px 0;
 }
 
 .calendar-day {
   text-align: center;
-  padding: 12px 4px;
+  padding: 8px;
   font-size: 14px;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.2s;
   color: var(--color-text-dark);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
 }
 
 .calendar-day:hover {
-  background-color: var(--color-light-green);
+  background-color: var(--color-light-gray);
 }
 
 .calendar-day.today {
-  background-color: var(--color-dark-blue);
+  background-color: var(--color-blue);
   color: var(--color-white);
   font-weight: 600;
 }
 
 .calendar-note {
   font-size: 12px;
-  color: #666;
+  color: var(--color-text-light);
   text-align: center;
+  font-style: italic;
 }
 
 /* Consultation Schedule */
 .consultation-schedule {
   background-color: var(--color-white);
   border-radius: 12px;
+  border: 1px solid var(--color-border);
   padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .consultation-schedule h3 {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
-  margin-bottom: 16px;
   color: var(--color-text-dark);
+  margin-bottom: 16px;
 }
 
 .no-schedule {
-  font-size: 14px;
-  color: #666;
   text-align: center;
+  color: var(--color-text-light);
+  font-size: 14px;
   padding: 20px 0;
 }
 
@@ -496,26 +518,9 @@ body {
     border-left: none;
     border-top: 1px solid var(--color-border);
   }
-  
-  .video-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
-  }
-  
-  .my-video {
-    border-radius: 12px;
-  }
-  
-  .remote-video {
-    border-radius: 12px;
-  }
 }
 
 @media (max-width: 768px) {
-  .nav-menu {
-    display: none;
-  }
-  
   .video-section {
     padding: 20px;
   }
@@ -524,8 +529,35 @@ body {
     padding: 20px;
   }
   
+  .nav-menu {
+    display: none;
+  }
+  
+  .video-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .video-container {
+    height: 300px;
+  }
+  
+  .section-title {
+    font-size: 24px;
+  }
+  
+  .control-buttons {
+    gap: 12px;
+  }
+  
+  .control-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+  
   .action-buttons {
     flex-direction: column;
+    gap: 12px;
   }
   
   .action-btn {
