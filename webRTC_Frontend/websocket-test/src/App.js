@@ -127,9 +127,19 @@ export default function VideoChat() {
       localStreamRef.current = stream;
       
       if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        await localVideoRef.current.play();
-        console.log('🎬 로컬 비디오 재생 시작');
+        const videoElement = localVideoRef.current;
+        videoElement.srcObject = stream;
+        
+        // 안전한 재생 시도
+        try {
+          await videoElement.play();
+          console.log('🎬 로컬 비디오 재생 시작');
+        } catch (playError) {
+          console.warn('⚠️ 로컬 비디오 자동 재생 실패:', playError.message);
+          // 사용자 상호작용 후 재생하도록 설정
+          videoElement.muted = true;
+          await videoElement.play();
+        }
       }
       
       return stream;
@@ -274,14 +284,28 @@ export default function VideoChat() {
       });
       
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-        remoteVideoRef.current.play().then(() => {
-          console.log('🎬 원격 비디오 재생 시작');
-          setInCall(true);
-          setConnectionState('in-call');
-        }).catch(err => {
-          console.error('❌ 원격 비디오 재생 실패:', err);
-        });
+        const videoElement = remoteVideoRef.current;
+        
+        // 기존 재생을 안전하게 중지
+        videoElement.pause();
+        videoElement.srcObject = null;
+        
+        // 새 스트림 설정
+        videoElement.srcObject = remoteStream;
+        
+        // 짧은 지연 후 재생 시도
+        setTimeout(() => {
+          videoElement.play().then(() => {
+            console.log('🎬 원격 비디오 재생 시작');
+            setInCall(true);
+            setConnectionState('in-call');
+          }).catch(err => {
+            console.error('❌ 원격 비디오 재생 실패:', err);
+            // 재생 실패해도 연결은 성공한 것으로 처리
+            setInCall(true);
+            setConnectionState('in-call');
+          });
+        }, 100);
       }
     };
 

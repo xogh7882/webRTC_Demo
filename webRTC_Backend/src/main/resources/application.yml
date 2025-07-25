@@ -6,7 +6,7 @@ spring:
 kurento:
   client:
     # Kurento Media Server WebSocket URL (Docker 컨테이너명 사용)
-    ws-url: ws://localhost:8888/kurento
+    ws-url: ws://70.12.247.69:8888/kurento
     # 연결 타임아웃 (밀리초)
     connection-timeout: 20000
     # 요청 타임아웃 (밀리초)
